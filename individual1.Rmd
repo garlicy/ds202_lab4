@@ -1,0 +1,168 @@
+---
+title: 'Lab #4'
+author: "Jung Ho Suh"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readxl)
+defense <- read_excel('cyclonesFootball2020.xlsx', sheet='Defensive')
+offense <- read_excel('cyclonesFootball2020.xlsx', sheet='Offensive')
+bio <- read_excel('cyclonesFootball2020.xlsx', sheet='Biography')
+str(defense)
+```
+
+  ***Part one: Cleaning data***
+  
+Although the three Excel sheets are loaded into R, they are not useful before some cleaning. Manipulate the three imported data frames:
+
+    1.The player names and opponent names should be factors.
+    2.All offensive and defensive statistics should be numerical. The Weight column in biogrpahy should also be numeric. (Optional: Read ?across and learn to mutate multiple columns simultaneously using the across function in dplyr)
+    3.The Height column in biography should be numeric. (Hint: Use a unit that works well)
+    4.Add a column to both defense and offense indicating whether it is the first or the second game versus an opponent. We had a single game versus each opponent except for Oklahoma, which we played against twice. (Hint: You can use group_by(), mutate(), and row_number())
+
+By cleaning the three data frames in R, at the end of this step you should have the following three clean data frames: defClean, offClean, and bioClean. Print the structures of these data frames using str().
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+defense <- read_excel('cyclonesFootball2020.xlsx', sheet='Defensive')
+offense <- read_excel('cyclonesFootball2020.xlsx', sheet='Offensive')
+bio <- read_excel('cyclonesFootball2020.xlsx', sheet='Biography')
+
+#mutate(across(1:Sepal.Width, round))
+#mutate(across(c(1, 2), round))
+
+defClean <- defense %>%  mutate_at(vars(Name, Opponent_Opponent), as.factor) %>% mutate(across(Tackles_Solo:Pass_PB, as.numeric)) %>% group_by(Name, Opponent_Opponent) %>% mutate(num_game = row_number())
+
+offClean <- offense %>%  mutate_at(vars(Name, Opponent_Opponent), as.factor) %>% mutate(across(Receiving_REC:Passing_INT, as.numeric)) %>% group_by(Name, Opponent_Opponent) %>% mutate(num_game = row_number())
+
+bioClean <- bio %>%  mutate_at(vars(Name), as.factor) %>% separate(Height, c('feet','inch'), sep = '-', convert = TRUE, remove = FALSE) %>% mutate(Height = 12*feet+inch) %>% mutate(across(Height:Weight, as.numeric))
+
+str(defClean)
+str(offClean)
+str(bioClean)
+
+```
+
+***Part two: Tidying and exploring***
+  
+For the following questions, work on the cleaned data frames defClean, offClean, and bioClean.
+
+  **1. Reformat the offClean data frame into a tidy format using pivot_longer. The type of statistic (Receiving_REC for the number of receivings, Receiving_YDS for receiving yards, etc) is added as a new key column named stat.**
+    
+```{r}
+library(dplyr)
+
+tidy_offClean <- offClean %>% pivot_longer(Receiving_REC:Passing_INT, names_to = "stat", values_to = "value")
+tidy_offClean
+```
+    
+  **2. Obtain the player-level offensive statistics. Namely, for each player and each type of statistics, obtain the sum of the statistics in all games.**
+    
+```{r}
+library(dplyr)
+
+offstat <- tidy_offClean %>% group_by(Name, stat) %>% 
+  summarize(
+    total = sum(value)
+  )
+offstat
+
+```
+    
+  **3. Show the distributions of the player-level offensive statistics. The distribution of each offensive statsitic should be shown in a separate facet. Explain the patterns you see.**
+    
+```{r}
+library(dplyr)
+library(ggplot2)
+
+
+ggplot(offstat, aes(x=Name, weight=total)) + geom_bar() + 
+  facet_wrap(~stat)
+
+```
+   
+It is very hard to see it because there are not much of a data, but you can see that the more you attempt(ATT) or receiving(REC) the more yards you get(YDS), and the more yards (YDS) the more you get touchdown (TD).
+
+  **4. Did ISU have better offense against Oregon or Oklahoma? Answer this question by creating a scatterplot with the x- and y-axes being the receiving yards of the ISU players against each of these two opponents. A large number of receiving yards indicates good offense.**
+    
+```{r}
+library(dplyr)
+library(ggplot2)
+
+filtered_data <- tidy_offClean %>% filter(Opponent_Opponent %in% c("Oregon", "Oklahoma") & stat == "Receiving_YDS")
+filtered_data
+
+filtered_data <- filtered_data %>% group_by(Name, Opponent_Opponent) %>% summarize(
+  meanval = mean(value)
+)
+#meanval <- visib_delay  %>% group_by(visib) %>% summarize("delay_mean" = mean(dep_delay, na.rm= TRUE))
+
+filtered_data
+ggplot(filtered_data, aes(x=Name ,y=meanval, color = Opponent_Opponent)) + geom_point()
+
+```
+
+It looks like ISU did better offense in against Oklahoma.
+
+Now turn our attention to the player biography.
+
+  **5. Separate the Hometown column into two columns, namely, the city and the state where the player comes from. Print the first few rows of these two columns. (Hint: look at the sep= argument of separate)**
+    
+```{r}
+library(dplyr)
+
+bioClean <- bioClean %>% separate(Hometown, c('city','state'), sep = ',') 
+head(data_frame(bioClean$city,bioClean$state), 10)
+
+```
+    
+  **6. How many players are there from each state?**
+    
+```{r}
+library(dplyr)
+
+num_players_by_state <- bioClean %>% group_by(state) %>% summarize(
+  sum = n()
+)
+num_players_by_state
+
+```
+
+  **7. How does the performance of quarterback Brock Purdy relate to the performance of the ISU team? Comment on both the defense and offense.**
+  
+```{r}
+library(dplyr)
+library(ggplot2)
+off_PBrock <- offstat %>% filter(Name == "Purdy, Brock") %>% group_by(stat) %>% replace(is.na(.), 0) %>% summarize(
+    indvtotal = sum(total)
+  )
+
+#def_Pbrock <- defClean %>% filter(Name == "Purdy, Brock")
+
+off_PBrock
+
+offstat_team <- offstat %>% group_by(stat) %>% replace(is.na(.), 0) %>%
+  summarize(
+    teamtotal = sum(total)
+  )
+offstat_team
+
+
+joined_df <- offstat_team %>% left_join(off_PBrock, stat = stat) %>% pivot_longer(teamtotal:indvtotal, names_to = "indvteam", values_to = "value")
+joined_df
+
+ggplot(joined_df, aes(stat, value)) + geom_bar(aes(fill = indvteam), stat = "identity", position = "dodge") +theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+Purdy, Brock only has one Tackle_Solo in the defense, so there is not many things to say.
+
+For the offense, he greatly contributed on passing_int,and passing_yds. He somewhat contributed on rushing_att, rushing_YDS, and rusing_TD. I would say as a quarterback, he is doing great job on passing and making points. He is not too bad on rushing too, having some records to contributing touchdown.
